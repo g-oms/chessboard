@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<head>
+    <meta charset="UTF-8">
+
+    <title>
+        Chessboard
+    </title>
+</head>
+
+<body>
+
+<div>
+    <h3 align="center" id='timer'>0.000 s</h3>
+</div>
+
+<table align="center" style="background-color: #270f04; border: 5px solid #270f04; border-collapse: collapse;">
+    <tbody id="chessboard">
+
+    </tbody>
+</table>
+
+<h3 align="center" id="message"></h3>
+
+<br>
+
+<h3 align="center" id="wins"></h3>
+
+
+<audio id="music" src="audio/music/jazz.mp3" loop></audio>
+<script>
+  const music = document.getElementById('music');
+  music.loop = true;
+
+  // 1. Create one AudioContext + lowpass filter
+  const ctx    = new AudioContext();
+  const src    = ctx.createMediaElementSource(music);
+  const filter = ctx.createBiquadFilter();
+  filter.type           = 'lowpass';
+  filter.frequency.value = 20000;    // open at start
+  src.connect(filter);
+  filter.connect(ctx.destination);
+
+  // 2. On first user interaction, resume + play music
+  function startMusic() {
+    ctx.resume()
+      .then(() => music.play())
+      .catch(console.error);
+    document.removeEventListener('mousedown', startMusic);
+    document.removeEventListener('touchstart', startMusic);
+  }
+  document.addEventListener('mousedown', startMusic);
+  document.addEventListener('touchstart', startMusic);
+
+  // 3. Expose filter + ctx globally so togglePause can reach them
+  window.__musicFilter  = filter;
+  window.__musicContext = ctx;
+</script>
+
+
+<script>
+
+    const timerPrecision = 19;
+    const dot_character = '•';
+    const target_character = '⦾';
+    const light_tile = "#db6d5a";
+    const dark_tile = "#5c1707";
+
+    const BoardPattern = {
+        EMPTY: (() => {
+            const empty = new Array(8).fill(null).map(() => new Array(8).fill(null)) //[new Array(8).fill(dark_tile), ...(new Array(6).fill(null).map(() => [dark_tile, ...new Array(6).fill(light_tile), dark_tile])), new Array(8).fill(dark_tile)],
+
+            return empty;
+        })(),
+
+        BOX: (() => {
+            const box = new Array(8).fill(null).map(() => new Array(8).fill(light_tile)) //[new Array(8).fill(dark_tile), ...(new Array(6).fill(null).map(() => [dark_tile, ...new Array(6).fill(light_tile), dark_tile])), new Array(8).fill(dark_tile)],
+            
+            box[0][0] = dark_tile;
+            box[1][0] = dark_tile;
+            box[0][1] = dark_tile;
+
+            box[7][0] = dark_tile;
+            box[6][0] = dark_tile;
+            box[7][1] = dark_tile;
+            
+            box[0][7] = dark_tile;
+            box[0][6] = dark_tile;
+            box[1][7] = dark_tile;
+
+            box[7][7] = dark_tile;
+            box[6][7] = dark_tile;
+            box[7][6] = dark_tile;
+
+            return box;
+        })(),
+
+        // PAUSE: (() => {
+        //     const pause = [new Array(8).fill(null), ...(new Array(6).fill(null).map(() => [null, ...(new Array(6).fill(light_tile)), null])), new Array(8).fill(null)]; //[new Array(8).fill(dark_tile), ...(new Array(6).fill(null).map(() => [dark_tile, ...new Array(6).fill(light_tile), dark_tile])), new Array(8).fill(dark_tile)],
+            
+        //     pause[2][2] = dark_tile;
+        //     pause[3][2] = dark_tile;
+        //     pause[4][2] = dark_tile;
+        //     pause[5][2] = dark_tile;
+
+        //     pause[2][5] = dark_tile;
+        //     pause[3][5] = dark_tile;
+        //     pause[4][5] = dark_tile;
+        //     pause[5][5] = dark_tile;
+
+        //     return pause;
+        // })()
+    };
+
+    BoardPattern.PAUSE = (() => {
+        const thisPattern = BoardPattern.EMPTY.map(row => [...row]);
+        const thisShape = [
+            {x: 2, y: 2},
+            {x: 2, y: 3},
+            {x: 2, y: 4},
+            {x: 2, y: 5},
+            {x: 5, y: 2},
+            {x: 5, y: 3},
+            {x: 5, y: 4},
+            {x: 5, y: 5}
+        ];
+
+        thisShape.forEach(({x, y}) => {
+            if (isBetween(y, 0, 8) && isBetween(x, 0, 8)) {
+                thisPattern[y][x] = dark_tile;
+            }
+        });
+        return thisPattern;
+    })();
+
+    BoardPattern.THREE = function() {
+        const numberPattern = BoardPattern.EMPTY.map(row => [...row]);
+        const numberShape = [
+            {x: 2, y: 2},
+            {x: 3, y: 2},
+            {x: 4, y: 2},
+            {x: 5, y: 2},
+            {x: 4, y: 3},
+            {x: 5, y: 4},
+            {x: 4, y: 5},
+            {x: 3, y: 5},
+            {x: 2, y: 4}
+        ];
+        numberShape.forEach(({x, y}) => {
+            const yy = y + animation_offset;
+            if (isBetween(yy, 0, 8) && isBetween(x, 0, 8)) {
+                numberPattern[yy][x] = dark_tile;
+            }
+        });
+        return numberPattern;
+    };
+
+    BoardPattern.TWO = function() {
+        const numberPattern = BoardPattern.EMPTY.map(row => [...row]);
+        const numberShape = [
+            {x: 2, y: 3},
+            {x: 3, y: 2},
+            {x: 4, y: 2},
+            {x: 5, y: 3},
+            {x: 4, y: 4},
+            {x: 2, y: 5},
+            {x: 3, y: 5},
+            {x: 4, y: 5},
+            {x: 5, y: 5}
+        ];
+        numberShape.forEach(({x, y}) => {
+            const yy = y + animation_offset;
+            if (isBetween(yy, 0, 8) && isBetween(x, 0, 8)) {
+                numberPattern[yy][x] = dark_tile;
+            }
+        });
+        return numberPattern;
+    };
+
+    BoardPattern.ONE = function() {
+        const numberPattern = BoardPattern.EMPTY.map(row => [...row]);
+        const numberShape = [
+            {x: 3, y: 3},
+            {x: 4, y: 2},
+            {x: 4, y: 3},
+            {x: 4, y: 4},
+            {x: 2, y: 5},
+            {x: 3, y: 5},
+            {x: 4, y: 5},
+            {x: 5, y: 5}
+        ];
+        numberShape.forEach(({x, y}) => {
+            const yy = y + animation_offset;
+            if (isBetween(yy, 0, 8) && isBetween(x, 0, 8)) {
+                numberPattern[yy][x] = dark_tile;
+            }
+        });
+        return numberPattern;
+    };
+
+
+    function createSFX(path) {
+        const audio = new Audio(path);
+        audio.preload = 'auto';
+        audio.load();
+        return audio;
+    }
+
+    const sfx_beep = createSFX('audio/beep.mp3');
+    const sfx_bell = createSFX('audio/bell.mp3');
+    const sfx_move = createSFX('audio/move.mp3');
+    const sfx_snipe = createSFX('audio/snipe.mp3');
+    const sfx_start = createSFX('audio/start.mp3');
+    const sfx_pause = createSFX('audio/pause.mp3');
+
+
+    const board = document.getElementById('chessboard');
+    createBoard();
+
+    setBoardPattern(BoardPattern.BOX);
+
+    let piece;
+    let x, y;
+    let target_x, target_y;
+    let validPositions;
+    let moveCount;
+    let selected;
+    let paused;
+    let won;
+    let win_count = 0;
+    let ms;
+    
+
+    //document.addEventListener('keydown', reset);
+    document.addEventListener('mousedown', reset);
+
+    document.addEventListener('keyup', function(event) {
+        if (event.key.toLowerCase() === 'p') {
+            togglePause();
+        }
+    });
+
+    async function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    let animation_offset;
+    async function animatedCountdown(speed){
+        let won_was = won;
+        won = null;
+        for (const key of ['THREE', 'TWO', 'ONE']) {
+            animation_offset = 8;
+            while(animation_offset > -8) {
+                setBoardPattern(BoardPattern.BOX);
+                setBoardPattern(BoardPattern[key]());
+                if (animation_offset == 0) {
+                    sfx_beep.play();
+                    await sleep({normal: 200, fast: 100}[speed]);
+                }
+                await sleep({normal: 30, fast: 10}[speed]);
+                animation_offset--;
+            }
+            await sleep({normal: 50, fast: 10}[speed]);
+        }
+        won = won_was;
+    }
+
+
+    const Piece = {
+        ROOK: '♖',
+        KNIGHT: '♘',
+        BISHOP: '♗',
+        QUEEN: '♕',
+        KING: '♔',
+        PAWN: '♙'
+    };
+
+    const PieceImages = {
+        '♖': 'images/Rook.png',
+        '♘': 'images/Knight.png',
+        '♗': 'images/Bishop.png',
+        '♕': 'images/Queen.png',
+        '♔': 'images/King.png',
+        '♙': 'images/Pawn.png'
+    };
+
+    function setPieceImage(button, pieceChar) {
+        button.innerHTML = '';
+
+        const img = document.createElement('img');
+        img.src = PieceImages[pieceChar];
+        img.alt = pieceChar;
+        img.style.width = '60%';
+        img.style.height = '60%';
+        img.style.display = 'block';
+        img.style.margin = 'auto';
+        img.draggable = false;
+
+        button.appendChild(img);
+    }
+
+    async function start(){
+        await animatedCountdown('normal');
+        sfx_bell.play();
+        createBoard();
+        setBoardPattern();
+        paused = false;
+        won = true;
+        reset();
+    }
+
+    let timerId;
+
+    function reset(){
+        if (won && !paused) {
+            
+            sfx_start.play();
+
+            if (win_count >= 1) {
+                board.getElementsByTagName('tr')[y].getElementsByTagName('td')[x].getElementsByTagName('button')[0].innerHTML = '';
+                board.getElementsByTagName('tr')[y].getElementsByTagName('td')[x].getElementsByTagName('button')[0].style.border = 'revert';
+            }
+
+            document.getElementById('message').innerHTML = "...";
+            piece = Object.values(Piece)[Math.floor(Math.random() * 6)];
+            moveCount = 0;
+            selected = false;
+            won = false;
+            
+            createPiece();
+            createTarget();
+            validPositions = getValidPositions();
+
+            ms = 0;
+            if (timerId) {
+                clearInterval(timerId);
+            }
+            timerId = setInterval(() => {
+                if (!won && !paused) {
+                    ms += timerPrecision;
+                    document.getElementById('timer').innerHTML = (ms / 1000).toFixed(3) + ' s';
+                }
+            }, timerPrecision);
+        }
+    }
+
+    let temp_boardData;
+    async function togglePause(){
+        if (paused != null) {
+            if (!paused) {
+                temp_boardData = board.innerHTML;
+
+                window.__musicFilter.frequency.setValueAtTime(500, window.__musicContext.currentTime);
+                paused = true;
+
+                if (selected) {
+                    toggleValidMoves();
+                    selected = true;
+                }
+
+                sfx_pause.play();
+
+                createBoard();
+                setBoardPattern(BoardPattern.BOX);
+                setBoardPattern(BoardPattern.PAUSE);
+
+            } else {
+                
+                paused = null;
+                await animatedCountdown('fast');
+
+                if (selected) {
+                    selected = false;
+                    toggleValidMoves();
+                }
+
+                window.__musicFilter.frequency.setValueAtTime(20000, window.__musicContext.currentTime);
+                paused = false;
+
+                setBoardPattern();
+
+                board.innerHTML = temp_boardData;
+
+            }            
+        }
+
+    }
+
+    function createBoard() {
+        board.innerHTML = '';
+
+        for (let y_i = 0; y_i < 8; y_i++) { 
+            var row = document.createElement('tr');
+            for (let x_j = 0; x_j < 8; x_j++) {
+                var cell = document.createElement('td');
+                var button = document.createElement('button');
+                button.style.width = '80px';
+                button.style.height = '80px';
+                button.style.fontSize = '34px';
+                button.style.userSelect = 'none'
+
+                button.innerHTML = '';
+
+                button.dataset.x = x_j;
+                button.dataset.y = y_i;
+
+                button.dataset.cantorValue = cantorPair(x_j, y_i) + '';
+
+                button.style.backgroundImage = "url('images/textures/wood.jpg')";
+                button.style.backgroundSize = '560px 560px';
+                button.style.backgroundPosition = (80*((Math.floor(Math.random() * 100) % 7) - 3)) + 'px ' + (80*((Math.floor(Math.random() * 100) % 7) - 3)) + 'px';
+                button.style.backgroundBlendMode = 'overlay';
+                //button.style.transform = "rotate(" + (90 * Math.floor(Math.random()*4)) + "deg)";
+
+                button.dataset.pattern = (x_j + y_i) % 2 === 0 ? 'light' : 'dark';
+
+                button.dataset.validity = 'invalid';
+                // button.addEventListener('click', function() {
+                //     buttonClick(x_j, y_i);
+                // });
+
+                cell.appendChild(button);
+                row.appendChild(cell);
+            }
+            
+            
+            board.appendChild(row);
+        }
+    }
+    board.addEventListener('click', (event) => {
+        const button = event.target.closest('button');
+        if (button) {
+            const x = +button.dataset.x;
+            const y = +button.dataset.y;
+            buttonClick(x, y);
+        }
+    });
+
+    function setBoardPattern(pattern){
+
+        for (let y_i = 0; y_i < 8; y_i++) { 
+            
+            for (let x_j = 0; x_j < 8; x_j++) {
+
+                button = board.getElementsByTagName('tr')[y_i].getElementsByTagName('td')[x_j].getElementsByTagName('button')[0];
+
+                let bg;
+                if (pattern == null) {
+                    bg = {light: light_tile, dark: dark_tile}[button.dataset.pattern];
+                    button.style.backgroundColor = bg;
+                    button.style.color = getContrastingTextColor(bg);
+                } else if (pattern[y_i][x_j] != null) {
+                    bg = pattern[y_i][x_j];
+                    button.style.backgroundColor = bg;
+                    button.style.color = getContrastingTextColor(bg);
+                
+                }
+                
+            }
+        }
+
+        function getContrastingTextColor(bgColor) {
+            if (bgColor.startsWith('#')) {
+                let r = parseInt(bgColor.substr(1, 2), 16);
+                let g = parseInt(bgColor.substr(3, 2), 16);
+                let b = parseInt(bgColor.substr(5, 2), 16);
+
+                let luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+                return luminance < 40 ? 'white' : 'black';
+            }
+
+            return 'black';
+        }
+    }
+
+    function createPiece(){
+
+        x = Math.floor(Math.random() * 8);
+        y = Math.floor(Math.random() * (8 - (2 * (piece == Piece.PAWN)))) + (1 * (piece == Piece.PAWN));
+
+        setPieceImage(
+            board.getElementsByTagName('tr')[y].getElementsByTagName('td')[x].getElementsByTagName('button')[0],
+            piece
+        );
+    }
+
+    function createTarget(){
+
+        target_x = x;
+        target_y = y;
+
+        while (target_x == x && target_y == y ||
+            !(!(piece == Piece.BISHOP) || board.getElementsByTagName('tr')[y].getElementsByTagName('td')[x].getElementsByTagName('button')[0].dataset.pattern == board.getElementsByTagName('tr')[target_y].getElementsByTagName('td')[target_x].getElementsByTagName('button')[0].dataset.pattern)
+        ) {
+            if (piece == Piece.PAWN) {
+                target_y = y - 1 - Math.floor(Math.random() * y);
+            } else {
+                target_x = Math.floor(Math.random() * 8);
+                target_y = Math.floor(Math.random() * 8);
+            }
+        }
+
+        board.getElementsByTagName('tr')[target_y].getElementsByTagName('td')[target_x].getElementsByTagName('button')[0].innerHTML = target_character;
+        board.getElementsByTagName('tr')[target_y].getElementsByTagName('td')[target_x].getElementsByTagName('button')[0].style.border = '3px solid gold';
+    }
+
+    function buttonClick(clicked_x, clicked_y){
+        if (!paused) {
+            if (won === undefined) {
+                if(clicked_x == 1 && isBetween(clicked_y, 1, 6)) {
+                    start();
+                }
+
+                if (cantorPair(clicked_x, clicked_y) == cantorPair(6, 6)) {
+                    document.getElementById('music').muted = false;
+                }
+            } else if (!won) {
+
+                if(clicked_y == y && clicked_x == x) {
+                    toggleValidMoves();
+                } else if (board.getElementsByTagName('tr')[clicked_y].getElementsByTagName('td')[clicked_x].getElementsByTagName('button')[0].dataset.validity == 'valid') {
+                    movePiece(clicked_x, clicked_y);
+                }
+            }
+        } else {
+            //do nothing
+        }
+    }
+
+    function toggleValidMoves(){
+        selected = !selected;
+
+        if (selected){
+            showValidMoves(validPositions);
+        } else {
+            hideValidMoves(validPositions);
+        }
+
+        function showValidMoves(validPositions){
+
+            board.getElementsByTagName('tr')[y].getElementsByTagName('td')[x].getElementsByTagName('button')[0].style.borderColor = 'red';
+
+            for (let validPosition of validPositions){
+                validCantor = cantorPair(validPosition.x, validPosition.y);
+                pieceCantor = +board.getElementsByTagName('tr')[y].getElementsByTagName('td')[x].getElementsByTagName('button')[0].dataset.cantorValue;
+                if (isBetween(validPosition.x, 0, 8) && isBetween(validPosition.y, 0, 8) && validCantor != pieceCantor){
+                    board.getElementsByTagName('tr')[validPosition.y].getElementsByTagName('td')[validPosition.x].getElementsByTagName('button')[0].dataset.validity = 'valid';
+                }
+            }
+            const valid_buttons = document.querySelectorAll('button[data-validity="valid"]');
+
+            valid_buttons.forEach(vb => {
+                if (+vb.dataset.cantorValue != cantorPair(target_x, target_y)) vb.innerHTML = dot_character;
+            });
+        }
+
+        function hideValidMoves(validPositions){
+
+            board.getElementsByTagName('tr')[y].getElementsByTagName('td')[x].getElementsByTagName('button')[0].style.borderColor = 'revert';
+            
+            const valid_buttons = document.querySelectorAll('button[data-validity="valid"]');
+
+            valid_buttons.forEach(vb => {
+                if (+vb.dataset.cantorValue != cantorPair(target_x, target_y)) vb.innerHTML = '';
+            });
+
+            for (let validPosition of validPositions){
+                validCantor = cantorPair(validPosition.x, validPosition.y);
+                pieceCantor = +board.getElementsByTagName('tr')[y].getElementsByTagName('td')[x].getElementsByTagName('button')[0].dataset.cantorValue;
+                if (isBetween(validPosition.x, 0, 8) && isBetween(validPosition.y, 0, 8) && validCantor != pieceCantor){
+                    board.getElementsByTagName('tr')[validPosition.y].getElementsByTagName('td')[validPosition.x].getElementsByTagName('button')[0].dataset.validity = 'invalid';
+                }
+            }
+        }
+
+    }
+
+    function isBetween(value, min, max) {
+            return value >= min && value < max;
+        }
+
+    function cantorPair(x, y) {
+        return (((x + y) * (x + y + 1)) >> 1) + y;
+    }
+
+    function getValidPositions(){
+        let validPositions = [];
+        switch (piece) {
+            case Piece.ROOK:
+                for (var i = 0; i < 8; i++) validPositions.push({x: i, y: y});
+                for (var i = 0; i < 8; i++) validPositions.push({x: x, y: i});
+                break;
+            case Piece.KNIGHT:
+                validPositions.push({x: x + 1, y: y + 2});
+                validPositions.push({x: x + 2, y: y + 1});
+                validPositions.push({x: x + 2, y: y - 1});
+                validPositions.push({x: x + 1, y: y - 2});
+                validPositions.push({x: x - 1, y: y - 2});
+                validPositions.push({x: x - 2, y: y - 1});
+                validPositions.push({x: x - 2, y: y + 1});
+                validPositions.push({x: x - 1, y: y + 2});
+                break;
+            case Piece.BISHOP:
+                for (var i = 0 - Math.min(x, y); i < 8 - Math.min(x, y); i++) validPositions.push({x: x + i, y: y + i});
+                for (var i = 0 - Math.min(x, 7 - y); i < 8 - Math.min(x, y); i++) validPositions.push({x: x + i, y: y - i});
+                break;
+            case Piece.QUEEN:
+                for (var i = 0; i < 8; i++) validPositions.push({x: i, y: y});
+                for (var i = 0; i < 8; i++) validPositions.push({x: x, y: i});
+                for (var i = 0 - Math.min(x, y); i < 8 - Math.min(x, y); i++) validPositions.push({x: x + i, y: y + i});
+                for (var i = 0 - Math.min(x, 7 - y); i < 8 - Math.min(x, y); i++) validPositions.push({x: x + i, y: y - i});
+                break;
+            case Piece.KING:
+                validPositions.push({x: x + 0, y: y + 1});
+                validPositions.push({x: x + 1, y: y + 1});
+                validPositions.push({x: x + 1, y: y + 0});
+                validPositions.push({x: x + 1, y: y - 1});
+                validPositions.push({x: x + 0, y: y - 1});
+                validPositions.push({x: x - 1, y: y - 1});
+                validPositions.push({x: x - 1, y: y + 0});
+                validPositions.push({x: x - 1, y: y + 1});
+                break;
+            case Piece.PAWN:
+                validPositions.push({x: x, y: y - 1});
+                if (y == 6 && board.getElementsByTagName('tr')[y - 1].getElementsByTagName('td')[x].getElementsByTagName('button')[0].innerHTML != target_character) validPositions.push({x: x, y: y - 2});
+        }
+        return validPositions;
+    }
+
+    function movePiece(new_x, new_y){
+        if (selected) {
+            toggleValidMoves();
+        }
+
+        board.getElementsByTagName('tr')[y].getElementsByTagName('td')[x].getElementsByTagName('button')[0].innerHTML = '';
+
+        const dist_sq = (new_x - x)**2 + (new_y - y)**2;
+
+        x = new_x;
+        y = new_y;
+
+        sfx_move.play();
+
+        setPieceImage(
+            board.getElementsByTagName('tr')[y].getElementsByTagName('td')[x].getElementsByTagName('button')[0],
+            piece
+        );
+
+        moveCount++;
+
+        validPositions = getValidPositions();
+
+        if (x == target_x && y == target_y) {
+            document.getElementById('message').innerHTML = "You hit the target in " + moveCount + " move" + (moveCount > 1 ? "s" : "") + "!";
+            
+            won = true;
+            win_count++;
+
+            if (dist_sq > 35 && moveCount == 1) {
+                sfx_snipe.play();
+            }
+
+            document.getElementById('wins').innerHTML = "WIN COUNT: " + win_count;
+        } else if (true) { //quick mode
+            toggleValidMoves();
+        }
+
+    }
+
+</script>
+
+</body>
