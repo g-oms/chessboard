@@ -335,7 +335,7 @@
                 clearInterval(timerId);
             }
             timerId = setInterval(() => {
-                if (!won && !paused) {
+                if (!won && (paused === false)) {
                     ms += timerPrecision;
                     document.getElementById('timer').innerHTML = (ms / 1000).toFixed(3) + ' s';
                 }
